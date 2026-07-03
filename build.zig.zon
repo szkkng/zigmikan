@@ -1,0 +1,15 @@
+.{
+    .name = .zigmikan,
+    .version = "0.0.0",
+    .fingerprint = 0xe68f5de8d2c4db1c,
+    .minimum_zig_version = "0.16.0",
+    .dependencies = .{
+        .loader = .{ .path = "loader" },
+    },
+    .paths = .{
+        "build.zig",
+        "build.zig.zon",
+        "LICENSE",
+        "README.md",
+    },
+}
