@@ -34,6 +34,7 @@
                 zig.packages.${stdenv.hostPlatform.system}."0.16.0"
                 zls
                 qemu
+                binutils
               ];
 
               OVMF_CODE = "${pkgsX86.OVMF.firmware}";

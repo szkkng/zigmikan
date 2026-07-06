@@ -4,6 +4,7 @@ const File = uefi.protocol.File;
 const toUtf16 = std.unicode.utf8ToUtf16LeStringLiteral;
 const MemoryMapSlice = uefi.tables.MemoryMapSlice;
 const MemoryDescriptor = uefi.tables.MemoryDescriptor;
+const PhysicalAddress = uefi.tables.PhysicalAddress;
 
 pub fn main() uefi.Error!void {
     print("Hello, Mikan World!\n", .{});
@@ -15,6 +16,39 @@ pub fn main() uefi.Error!void {
     const root_dir = try openRootDir();
     const memmap_file = try root_dir.open(toUtf16("\\memmap"), .read_write_create, .{});
     try saveMemoryMap(&memmap, memmap_file);
+
+    const kernel_file = try root_dir.open(toUtf16("\\kernel.elf"), .read, .{});
+    const kernel_file_size = blk: {
+        const file_info_size = try kernel_file.getInfoSize(.file);
+        const file_info_buffer = try bs.allocatePool(.loader_data, file_info_size);
+        defer bs.freePool(file_info_buffer.ptr) catch {};
+
+        const file_info = try kernel_file.getInfo(.file, file_info_buffer[0..]);
+        break :blk file_info.file_size;
+    };
+    const kernel_base_addr: PhysicalAddress = 0x100000;
+    const pages = try bs.allocatePages(.{ .address = @ptrFromInt(kernel_base_addr) }, .loader_data, (kernel_file_size + 0xfff) / 0x1000);
+    _ = try kernel_file.read(@ptrCast(pages));
+    print("Kernel: 0x{x} ({d} bytes)\n", .{ kernel_base_addr, kernel_file_size });
+
+    bs.exitBootServices(uefi.handle, memmap.info.key) catch {
+        memmap = bs.getMemoryMap(&memmap_buf) catch |err| {
+            print("failed to get memory map: {s}\n", .{@errorName(err)});
+            while (true) {
+                asm volatile ("hlt");
+            }
+        };
+        bs.exitBootServices(uefi.handle, memmap.info.key) catch |err| {
+            print("Could not exit boot service: {s}\n", .{@errorName(err)});
+            while (true) {
+                asm volatile ("hlt");
+            }
+        };
+    };
+
+    const EntryPointType = *const fn () noreturn;
+    const entry_point: EntryPointType = @ptrFromInt(@as(*const u64, @ptrFromInt(kernel_base_addr + 24)).*);
+    entry_point();
 
     print("All done\n", .{});
 
