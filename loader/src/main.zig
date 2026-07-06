@@ -7,7 +7,7 @@ const MemoryDescriptor = uefi.tables.MemoryDescriptor;
 const PhysicalAddress = uefi.tables.PhysicalAddress;
 
 pub fn main() uefi.Error!void {
-    print("Hello, Mikan World!\n", .{});
+    print("Hello, Mikan World!\r\n", .{});
 
     const bs = uefi.system_table.boot_services.?;
     var memmap_buf: [4096 * 4]u8 align(@alignOf(MemoryDescriptor)) = undefined;
@@ -29,17 +29,17 @@ pub fn main() uefi.Error!void {
     const kernel_base_addr: PhysicalAddress = 0x100000;
     const pages = try bs.allocatePages(.{ .address = @ptrFromInt(kernel_base_addr) }, .loader_data, (kernel_file_size + 0xfff) / 0x1000);
     _ = try kernel_file.read(@ptrCast(pages));
-    print("Kernel: 0x{x} ({d} bytes)\n", .{ kernel_base_addr, kernel_file_size });
+    print("Kernel: 0x{x} ({d} bytes)\r\n", .{ kernel_base_addr, kernel_file_size });
 
     bs.exitBootServices(uefi.handle, memmap.info.key) catch {
         memmap = bs.getMemoryMap(&memmap_buf) catch |err| {
-            print("failed to get memory map: {s}\n", .{@errorName(err)});
+            print("failed to get memory map: {s}\r\n", .{@errorName(err)});
             while (true) {
                 asm volatile ("hlt");
             }
         };
         bs.exitBootServices(uefi.handle, memmap.info.key) catch |err| {
-            print("Could not exit boot service: {s}\n", .{@errorName(err)});
+            print("Could not exit boot service: {s}\r\n", .{@errorName(err)});
             while (true) {
                 asm volatile ("hlt");
             }
@@ -50,7 +50,7 @@ pub fn main() uefi.Error!void {
     const entry_point: EntryPointType = @ptrFromInt(@as(*const u64, @ptrFromInt(kernel_base_addr + 24)).*);
     entry_point();
 
-    print("All done\n", .{});
+    print("All done\r\n", .{});
 
     while (true) {
         asm volatile ("hlt");
@@ -77,10 +77,10 @@ fn openRootDir() uefi.Error!*File {
 }
 
 fn saveMemoryMap(map: *MemoryMapSlice, file: *File) uefi.Error!void {
-    _ = try file.write("Index, Type, Type(name), PhysicalStart, NumberOfPages, Attribute\n");
+    _ = try file.write("Index, Type, Type(name), PhysicalStart, NumberOfPages, Attribute\r\n");
 
     print(
-        "map->buffer = {x:0>8}, map->map_size = {x:0>8}\n",
+        "map->buffer = {x:0>8}, map->map_size = {x:0>8}\r\n",
         .{ @intFromPtr(map.ptr), map.info.len * map.info.descriptor_size },
     );
 
