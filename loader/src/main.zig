@@ -65,9 +65,12 @@ pub fn main() uefi.Error!void {
         };
     };
 
-    const EntryPointType = *const fn () noreturn;
+    const EntryPointType = *const fn (
+        frame_buffer_base: u64,
+        frame_buffer_size: u64,
+    ) callconv(.{ .x86_64_sysv = .{} }) noreturn;
     const entry_point: EntryPointType = @ptrFromInt(@as(*const u64, @ptrFromInt(kernel_base_addr + 24)).*);
-    entry_point();
+    entry_point(gop.mode.frame_buffer_base, gop.mode.frame_buffer_size);
 
     print("All done\r\n", .{});
 
