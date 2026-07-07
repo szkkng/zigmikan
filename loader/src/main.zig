@@ -5,6 +5,7 @@ const toUtf16 = std.unicode.utf8ToUtf16LeStringLiteral;
 const MemoryMapSlice = uefi.tables.MemoryMapSlice;
 const MemoryDescriptor = uefi.tables.MemoryDescriptor;
 const PhysicalAddress = uefi.tables.PhysicalAddress;
+const GraphicsOutput = uefi.protocol.GraphicsOutput;
 
 pub fn main() uefi.Error!void {
     print("Hello, Mikan World!\r\n", .{});
@@ -16,6 +17,24 @@ pub fn main() uefi.Error!void {
     const root_dir = try openRootDir();
     const memmap_file = try root_dir.open(toUtf16("\\memmap"), .read_write_create, .{});
     try saveMemoryMap(&memmap, memmap_file);
+
+    const gop = try openGop();
+    print("Resolution: {d}x{d}, Pixel Format: {s}, {d} pixels/line\r\n", .{
+        gop.mode.info.horizontal_resolution,
+        gop.mode.info.vertical_resolution,
+        @tagName(gop.mode.info.pixel_format),
+        gop.mode.info.pixels_per_scan_line,
+    });
+    print("Frame Buffer: 0x{x} - 0x{x}, Size: {d} bytes\r\n", .{
+        gop.mode.frame_buffer_base,
+        gop.mode.frame_buffer_base + gop.mode.frame_buffer_size,
+        gop.mode.frame_buffer_size,
+    });
+
+    const frame_buffer = @as([*]u8, @ptrFromInt(gop.mode.frame_buffer_base))[0..gop.mode.frame_buffer_size];
+    for (frame_buffer) |*f| {
+        f.* = 255;
+    }
 
     const kernel_file = try root_dir.open(toUtf16("\\kernel.elf"), .read, .{});
     const kernel_file_size = blk: {
@@ -97,6 +116,17 @@ fn saveMemoryMap(map: *MemoryMapSlice, file: *File) uefi.Error!void {
     }
 
     try file.close();
+}
+
+fn openGop() uefi.Error!*GraphicsOutput {
+    const bs = uefi.system_table.boot_services.?;
+    const gop_handle = (try bs.locateHandleBuffer(.{ .by_protocol = &uefi.protocol.GraphicsOutput.guid })).?;
+    const gop = (try bs.openProtocol(uefi.protocol.GraphicsOutput, gop_handle[0], .{
+        .by_handle_protocol = .{
+            .agent = uefi.handle,
+        },
+    })).?;
+    return gop;
 }
 
 fn print(comptime format: []const u8, args: anytype) void {
