@@ -12,13 +12,13 @@ pub fn main() uefi.Error!void {
 
     const bs = uefi.system_table.boot_services.?;
     var memmap_buf: [4096 * 4]u8 align(@alignOf(MemoryDescriptor)) = undefined;
-    var memmap = try bs.getMemoryMap(&memmap_buf);
+    var memmap = bs.getMemoryMap(&memmap_buf) catch |err| fatal("failed to get memory map", err);
 
-    const root_dir = try openRootDir();
-    const memmap_file = try root_dir.open(toUtf16("\\memmap"), .read_write_create, .{});
-    try saveMemoryMap(&memmap, memmap_file);
+    const root_dir = openRootDir() catch |err| fatal("failed to open root directory", err);
+    const memmap_file = root_dir.open(toUtf16("\\memmap"), .read_write_create, .{}) catch |err| fatal("failed to open file '\\memmap'", err);
+    saveMemoryMap(&memmap, memmap_file) catch |err| fatal("failed to save memory map", err);
 
-    const gop = try openGop();
+    const gop = openGop() catch |err| fatal("failed to open GOP", err);
     print("Resolution: {d}x{d}, Pixel Format: {s}, {d} pixels/line\r\n", .{
         gop.mode.info.horizontal_resolution,
         gop.mode.info.vertical_resolution,
@@ -36,33 +36,27 @@ pub fn main() uefi.Error!void {
         f.* = 255;
     }
 
-    const kernel_file = try root_dir.open(toUtf16("\\kernel.elf"), .read, .{});
+    const kernel_file = root_dir.open(toUtf16("\\kernel.elf"), .read, .{}) catch |err| fatal("failed to open file '\\kernel.elf'", err);
     const kernel_file_size = blk: {
-        const file_info_size = try kernel_file.getInfoSize(.file);
-        const file_info_buffer = try bs.allocatePool(.loader_data, file_info_size);
+        const file_info_size = kernel_file.getInfoSize(.file) catch |err| fatal("failed to get file information size", err);
+        const file_info_buffer = bs.allocatePool(.loader_data, file_info_size) catch |err| fatal("failed to allocate pool", err);
         defer bs.freePool(file_info_buffer.ptr) catch {};
 
-        const file_info = try kernel_file.getInfo(.file, file_info_buffer[0..]);
+        const file_info = kernel_file.getInfo(.file, file_info_buffer[0..]) catch |err| fatal("failed to get file information", err);
         break :blk file_info.file_size;
     };
     const kernel_base_addr: PhysicalAddress = 0x100000;
-    const pages = try bs.allocatePages(.{ .address = @ptrFromInt(kernel_base_addr) }, .loader_data, (kernel_file_size + 0xfff) / 0x1000);
-    _ = try kernel_file.read(@ptrCast(pages));
+    const pages = bs.allocatePages(
+        .{ .address = @ptrFromInt(kernel_base_addr) },
+        .loader_data,
+        (kernel_file_size + 0xfff) / 0x1000,
+    ) catch |err| fatal("failed to allocate pages", err);
+    _ = kernel_file.read(@ptrCast(pages)) catch |err| fatal("failed to read", err);
     print("Kernel: 0x{x} ({d} bytes)\r\n", .{ kernel_base_addr, kernel_file_size });
 
     bs.exitBootServices(uefi.handle, memmap.info.key) catch {
-        memmap = bs.getMemoryMap(&memmap_buf) catch |err| {
-            print("failed to get memory map: {s}\r\n", .{@errorName(err)});
-            while (true) {
-                asm volatile ("hlt");
-            }
-        };
-        bs.exitBootServices(uefi.handle, memmap.info.key) catch |err| {
-            print("Could not exit boot service: {s}\r\n", .{@errorName(err)});
-            while (true) {
-                asm volatile ("hlt");
-            }
-        };
+        memmap = bs.getMemoryMap(&memmap_buf) catch |err| fatal("failed to get memory map", err);
+        bs.exitBootServices(uefi.handle, memmap.info.key) catch |err| fatal("could not exit boot service", err);
     };
 
     const EntryPointType = *const fn (
@@ -74,6 +68,24 @@ pub fn main() uefi.Error!void {
 
     print("All done\r\n", .{});
 
+    halt();
+}
+
+fn print(comptime format: []const u8, args: anytype) void {
+    var buffer: [256]u8 = undefined;
+    const formatted = std.fmt.bufPrint(buffer[0..], format, args) catch unreachable;
+    var utf16_buf: [256:0]u16 = undefined;
+    const len = std.unicode.utf8ToUtf16Le(utf16_buf[0..], formatted) catch unreachable;
+    utf16_buf[len] = 0;
+    _ = uefi.system_table.con_out.?.outputString(utf16_buf[0..len :0]) catch unreachable;
+}
+
+fn fatal(comptime message: []const u8, err: anyerror) noreturn {
+    print("{s}: {s}\r\n", .{ message, @errorName(err) });
+    halt();
+}
+
+fn halt() noreturn {
     while (true) {
         asm volatile ("hlt");
     }
@@ -113,7 +125,14 @@ fn saveMemoryMap(map: *MemoryMapSlice, file: *File) uefi.Error!void {
         const formatted = std.fmt.bufPrint(
             buf[0..],
             "{d}, {x}, {s}, {x:0>8}, {x}, {x}\n",
-            .{ index, desc.type, @tagName(desc.type), desc.physical_start, desc.number_of_pages, @as(u64, @bitCast(desc.attribute)) & 0xfffff },
+            .{
+                index,
+                desc.type,
+                @tagName(desc.type),
+                desc.physical_start,
+                desc.number_of_pages,
+                @as(u64, @bitCast(desc.attribute)) & 0xfffff,
+            },
         ) catch unreachable;
         _ = try file.write(formatted);
     }
@@ -130,13 +149,4 @@ fn openGop() uefi.Error!*GraphicsOutput {
         },
     })).?;
     return gop;
-}
-
-fn print(comptime format: []const u8, args: anytype) void {
-    var buffer: [256]u8 = undefined;
-    const formatted = std.fmt.bufPrint(buffer[0..], format, args) catch unreachable;
-    var utf16_buf: [256:0]u16 = undefined;
-    const len = std.unicode.utf8ToUtf16Le(utf16_buf[0..], formatted) catch unreachable;
-    utf16_buf[len] = 0;
-    _ = uefi.system_table.con_out.?.outputString(utf16_buf[0..len :0]) catch unreachable;
 }
