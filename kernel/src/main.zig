@@ -1,4 +1,4 @@
-export fn KernelMain(
+export fn kernelMain(
     frame_buffer_base: u64,
     frame_buffer_size: u64,
 ) callconv(.{ .x86_64_sysv = .{} }) noreturn {
