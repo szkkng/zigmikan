@@ -6,6 +6,7 @@ const MemoryMapSlice = uefi.tables.MemoryMapSlice;
 const MemoryDescriptor = uefi.tables.MemoryDescriptor;
 const PhysicalAddress = uefi.tables.PhysicalAddress;
 const GraphicsOutput = uefi.protocol.GraphicsOutput;
+const FramebufferConfig = @import("common").FramebufferConfig;
 
 pub fn main() uefi.Error!void {
     print("Hello, Mikan World!\r\n", .{});
@@ -59,12 +60,24 @@ pub fn main() uefi.Error!void {
         bs.exitBootServices(uefi.handle, memmap.info.key) catch |err| fatal("could not exit boot service", err);
     };
 
-    const EntryPointType = *const fn (
-        frame_buffer_base: u64,
-        frame_buffer_size: u64,
-    ) callconv(.{ .x86_64_sysv = .{} }) noreturn;
+    const config: FramebufferConfig = .{
+        .frame_buffer = frame_buffer,
+        .pixels_per_scan_line = gop.mode.info.pixels_per_scan_line,
+        .horizontal_resolution = gop.mode.info.horizontal_resolution,
+        .vertical_resolution = gop.mode.info.vertical_resolution,
+        .pixel_format = switch (gop.mode.info.pixel_format) {
+            .red_green_blue_reserved_8_bit_per_color => .rgb_resv_8_bit_per_color,
+            .blue_green_red_reserved_8_bit_per_color => .bgr_resv_8_bit_per_color,
+            else => {
+                print("unimplemented pixel format: \r\n", .{});
+                halt();
+            },
+        },
+    };
+
+    const EntryPointType = *const fn (*const FramebufferConfig) callconv(.{ .x86_64_sysv = .{} }) noreturn;
     const entry_point: EntryPointType = @ptrFromInt(@as(*const u64, @ptrFromInt(kernel_base_addr + 24)).*);
-    entry_point(gop.mode.frame_buffer_base, gop.mode.frame_buffer_size);
+    entry_point(&config);
 
     print("All done\r\n", .{});
 
