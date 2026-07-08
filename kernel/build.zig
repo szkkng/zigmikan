@@ -5,6 +5,7 @@ pub fn build(b: *std.Build) void {
         .cpu_arch = .x86_64,
         .os_tag = .freestanding,
     });
+    const common_mod = b.dependency("common", .{}).module("common");
 
     const exe = b.addExecutable(.{
         .name = "kernel",
@@ -12,6 +13,7 @@ pub fn build(b: *std.Build) void {
             .root_source_file = b.path("src/main.zig"),
             .target = target,
             .optimize = .ReleaseSmall,
+            .imports = &.{.{ .name = "common", .module = common_mod }},
             .red_zone = false,
         }),
     });

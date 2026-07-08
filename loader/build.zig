@@ -7,6 +7,7 @@ pub fn build(b: *std.Build) void {
         .abi = .msvc,
     });
     const optimize = b.standardOptimizeOption(.{});
+    const common_mod = b.dependency("common", .{}).module("common");
 
     const exe = b.addExecutable(.{
         .name = "BOOTX64",
@@ -14,6 +15,7 @@ pub fn build(b: *std.Build) void {
             .root_source_file = b.path("src/main.zig"),
             .target = target,
             .optimize = optimize,
+            .imports = &.{.{ .name = "common", .module = common_mod }},
         }),
     });
 
