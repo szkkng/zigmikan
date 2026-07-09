@@ -7,6 +7,7 @@ const MemoryDescriptor = uefi.tables.MemoryDescriptor;
 const PhysicalAddress = uefi.tables.PhysicalAddress;
 const GraphicsOutput = uefi.protocol.GraphicsOutput;
 const FramebufferConfig = @import("common").FramebufferConfig;
+const Header = std.elf.Header;
 
 pub fn main() uefi.Error!void {
     print("Hello, Mikan World!\r\n", .{});
@@ -46,14 +47,22 @@ pub fn main() uefi.Error!void {
         const file_info = kernel_file.getInfo(.file, file_info_buffer[0..]) catch |err| fatal("failed to get file information", err);
         break :blk file_info.file_size;
     };
-    const kernel_base_addr: PhysicalAddress = 0x100000;
-    const pages = bs.allocatePages(
-        .{ .address = @ptrFromInt(kernel_base_addr) },
-        .loader_data,
-        (kernel_file_size + 0xfff) / 0x1000,
-    ) catch |err| fatal("failed to allocate pages", err);
-    _ = kernel_file.read(@ptrCast(pages)) catch |err| fatal("failed to read", err);
-    print("Kernel: 0x{x} ({d} bytes)\r\n", .{ kernel_base_addr, kernel_file_size });
+
+    const kernel_buffer = bs.allocatePool(.loader_data, kernel_file_size) catch |err| fatal("failed to allocate pool", err);
+    _ = kernel_file.read(kernel_buffer) catch |err| fatal("error", err);
+    var reader = std.Io.Reader.fixed(kernel_buffer);
+    const header = Header.read(&reader) catch |err| fatal("failed to read header", err);
+    const kernel_addr_range = calcLoadAddressRange(&header, kernel_buffer) catch |err| fatal("failed to calc", err);
+    const kernel_first_addr = kernel_addr_range.first;
+    const kernel_last_addr = kernel_addr_range.last;
+
+    const num_pages = (kernel_last_addr - kernel_first_addr + 0xfff) / 0x1000;
+    _ = bs.allocatePages(.{ .address = @ptrFromInt(kernel_first_addr) }, .loader_data, num_pages) catch |err| fatal("failed to allocate pages", err);
+
+    copyLoadSegments(&header, kernel_buffer) catch |err| fatal("failed to copy load segments", err);
+    print("Kernel: 0x{x} - 0x{x} \r\n", .{ kernel_first_addr, kernel_last_addr });
+
+    bs.freePool(kernel_buffer.ptr) catch |err| fatal("failed to free pool", err);
 
     bs.exitBootServices(uefi.handle, memmap.info.key) catch {
         memmap = bs.getMemoryMap(&memmap_buf) catch |err| fatal("failed to get memory map", err);
@@ -76,7 +85,7 @@ pub fn main() uefi.Error!void {
     };
 
     const EntryPointType = *const fn (*const FramebufferConfig) callconv(.{ .x86_64_sysv = .{} }) noreturn;
-    const entry_point: EntryPointType = @ptrFromInt(@as(*const u64, @ptrFromInt(kernel_base_addr + 24)).*);
+    const entry_point: EntryPointType = @ptrFromInt(@as(*const u64, @ptrFromInt(kernel_first_addr + 24)).*);
     entry_point(&config);
 
     print("All done\r\n", .{});
@@ -162,4 +171,45 @@ fn openGop() uefi.Error!*GraphicsOutput {
         },
     })).?;
     return gop;
+}
+
+const LoadAddressRange = struct {
+    first: u64,
+    last: u64,
+};
+
+fn calcLoadAddressRange(ehdr: *const Header, buffer: []const u8) !LoadAddressRange {
+    var kernel_first_addr: u64 = std.math.maxInt(u64);
+    var kernel_last_addr: u64 = 0;
+    var ph_buf_iter = ehdr.iterateProgramHeadersBuffer(buffer);
+
+    while (try ph_buf_iter.next()) |phdr| {
+        if (phdr.p_type != @intFromEnum(std.elf.PT.LOAD)) {
+            continue;
+        }
+        kernel_first_addr = @min(phdr.p_vaddr, kernel_first_addr);
+        kernel_last_addr = @max(phdr.p_vaddr + phdr.p_memsz, kernel_last_addr);
+    }
+
+    return .{ .first = kernel_first_addr, .last = kernel_last_addr };
+}
+
+fn copyLoadSegments(ehdr: *const Header, buffer: []const u8) !void {
+    var ph_buf_iter = ehdr.iterateProgramHeadersBuffer(buffer);
+    while (try ph_buf_iter.next()) |phdr| {
+        if (phdr.p_type != @intFromEnum(std.elf.PT.LOAD)) {
+            continue;
+        }
+        print("p_filez: {x}\r\n", .{phdr.p_filesz});
+        print("p_memsz: {x}\r\n", .{phdr.p_memsz});
+        print("p_offset: {x}\r\n", .{phdr.p_offset});
+        print("p_vaddr: {x}\r\n", .{phdr.p_vaddr});
+        const dst = @as([*]u8, @ptrFromInt(phdr.p_vaddr));
+        @memcpy(
+            dst[0..phdr.p_filesz],
+            buffer[phdr.p_offset..][0..phdr.p_filesz],
+        );
+        const remain_bytes = phdr.p_memsz - phdr.p_filesz;
+        @memset(dst[phdr.p_filesz..][0..remain_bytes], 0);
+    }
 }

@@ -20,11 +20,7 @@ pub fn build(b: *std.Build) void {
     exe.link_z_relro = false;
     exe.out_filename = "kernel.elf";
     exe.entry = .{ .symbol_name = "kernelMain" };
-
-    // Temporary workaround until the bootloader loads PT_LOAD segments correctly.
-    // Reference: https://github.com/uchan-nos/os-from-zero/issues/140#issuecomment-1445066297
-    exe.setLinkerScript(b.path("kernel.ld"));
-    // exe.image_base = 0x100000;
+    exe.image_base = 0x100000;
 
     b.installArtifact(exe);
 }
