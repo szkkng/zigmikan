@@ -2,7 +2,7 @@
 
 This project is a Zig implementation of [MikanOS](https://github.com/uchan-nos/mikanos) while following the book [ゼロからのOS自作入門](https://zero.osdev.jp). It is intended for learning purposes.
 
-Progress: Day04d completed.
+Progress: Day05a completed.
 
 Setup:
 
