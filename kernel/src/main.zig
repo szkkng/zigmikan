@@ -24,8 +24,9 @@ export fn kernelMain(
         }
     }
 
-    writeAscii(&pixel_writer, 50, 50, 'A', .{ .r = 0, .g = 0, .b = 0 });
-    writeAscii(&pixel_writer, 58, 50, 'A', .{ .r = 0, .g = 0, .b = 0 });
+    for ('!'..('~' + 1), 0..) |c, i| {
+        writeAscii(&pixel_writer, 8 * @as(u32, @intCast(i)), 50, @intCast(c), .{ .r = 0, .g = 0, .b = 0 });
+    }
 
     while (true) {
         asm volatile ("hlt");
