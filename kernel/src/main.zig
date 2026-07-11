@@ -1,11 +1,10 @@
 const FramebufferConfig = @import("common").FramebufferConfig;
 const graphics = @import("graphics.zig");
 const font = @import("font.zig");
-const writeAscii = font.writeAscii;
-const writeString = font.writeString;
 const PixelWriter = graphics.PixelWriter;
 const Console = @import("Console.zig");
 const std = @import("std");
+var console: Console = undefined;
 
 export fn kernelMain(
     framebuffer_config: *const FramebufferConfig,
@@ -21,15 +20,22 @@ export fn kernelMain(
         }
     }
 
-    var console = Console.init(&pixel_writer, .{ .r = 0, .g = 0, .b = 0 }, .{ .r = 255, .g = 255, .b = 255 });
-    var buf: [128]u8 = undefined;
+    console = Console.init(&pixel_writer, .{ .r = 0, .g = 0, .b = 0 }, .{ .r = 255, .g = 255, .b = 255 });
 
     for (0..27) |i| {
-        const s = std.fmt.bufPrint(&buf, "line: {d}\n", .{i}) catch unreachable;
-        console.putString(s);
+        printk("printk: {d}\n", .{i});
     }
 
     while (true) {
         asm volatile ("hlt");
     }
+}
+
+fn printk(comptime format: []const u8, args: anytype) void {
+    var buffer: [1024]u8 = undefined;
+    const formatted = std.fmt.bufPrint(&buffer, format, args) catch {
+        console.putString("printk: buffer too small\n");
+        return;
+    };
+    console.putString(formatted);
 }
