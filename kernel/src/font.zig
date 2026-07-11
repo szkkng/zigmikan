@@ -17,6 +17,12 @@ pub fn writeAscii(writer: *const PixelWriter, x: u32, y: u32, c: u8, color: Pixe
     }
 }
 
+pub fn writeString(writer: *const PixelWriter, x: u32, y: u32, string: []const u8, color: PixelColor) void {
+    for (string, 0..) |str, i| {
+        writeAscii(writer, x + 8 * @as(u32, @intCast(i)), y, str, color);
+    }
+}
+
 fn getFont(c: u8) []const u8 {
     const index: usize = 16 * @as(usize, c);
 

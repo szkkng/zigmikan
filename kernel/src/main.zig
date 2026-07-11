@@ -2,6 +2,7 @@ const FramebufferConfig = @import("common").FramebufferConfig;
 const graphics = @import("graphics.zig");
 const font = @import("font.zig");
 const writeAscii = font.writeAscii;
+const writeString = font.writeString;
 const PixelWriter = graphics.PixelWriter;
 
 export fn kernelMain(
@@ -27,6 +28,8 @@ export fn kernelMain(
     for ('!'..('~' + 1), 0..) |c, i| {
         writeAscii(&pixel_writer, 8 * @as(u32, @intCast(i)), 50, @intCast(c), .{ .r = 0, .g = 0, .b = 0 });
     }
+
+    writeString(&pixel_writer, 0, 66, "Hello, world!", .{ .r = 0, .g = 0, .b = 255 });
 
     while (true) {
         asm volatile ("hlt");
