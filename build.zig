@@ -2,14 +2,17 @@ const std = @import("std");
 
 pub fn build(b: *std.Build) void {
     const loader = b.dependency("loader", .{}).artifact("BOOTX64");
+    const kernel = b.dependency("kernel", .{}).artifact("kernel");
     const install_loader = b.addInstallArtifact(loader, .{
         .dest_dir = .{ .override = .{ .custom = "EFI/BOOT" } },
     });
-    const kernel = b.dependency("kernel", .{}).artifact("kernel");
     const install_kernel = b.addInstallArtifact(kernel, .{
         .dest_dir = .{ .override = .{ .custom = "" } },
     });
-    install_loader.step.dependOn(&install_kernel.step);
+    const install_step = b.getInstallStep();
+    install_step.dependOn(&install_kernel.step);
+    install_step.dependOn(&install_loader.step);
+
     const ovmf_code = b.graph.environ_map.get("OVMF_CODE") orelse @panic("OVMF_CODE not found");
     const ovmf_vars = b.graph.environ_map.get("OVMF_VARS") orelse @panic("OVMF_VARS not found");
 
@@ -33,6 +36,6 @@ pub fn build(b: *std.Build) void {
         "-monitor",
         "stdio",
     });
-    qemu_cmd.step.dependOn(&install_loader.step);
+    qemu_cmd.step.dependOn(install_step);
     run_step.dependOn(&qemu_cmd.step);
 }
